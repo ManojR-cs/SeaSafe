@@ -1,0 +1,29 @@
+# Python bytecode and test/tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local Python environments
+.venv/
+venv/
+
+# Local environment variables and Streamlit secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Local build outputs
+build/
+dist/
+firmware/**/build/
+*.elf
+*.bin
+*.hex
+*.map
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
