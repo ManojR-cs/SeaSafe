@@ -1,13 +1,47 @@
-# SeaSafe — LoRa Vessel-to-Shore Safety Demonstrator
+# SeaSafe — LoRa-Based Vessel-to-Shore Safety Prototype
 
-SeaSafe is a prototype architecture for sending vessel status and candidate incident events from an ESP32 vessel node to a shore ESP32 receiver over LoRa. The receiver forwards newline-delimited JSON to a local Streamlit dashboard. A GPS receiver can attach coordinates; an MPU6050 can flag acceleration/tilt candidates; microSD can retain JSONL event records.
+SeaSafe is a prototype for sending vessel status and candidate incident alerts from an ESP32 vessel node to a shore station over LoRa. The shore receiver forwards received messages over USB serial to a local Streamlit dashboard.
 
-**Important:** This repository is a development/demo package, not a certified maritime safety system. The hardware source is provided but has not been physically verified in this package. Do not represent radio range, GPS accuracy, sensor detection, persistent logging, or emergency delivery as tested until you test and document each one.
+The project is intended for learning, demonstration, and further development. **It is not a certified maritime safety system and must not replace approved marine distress equipment or procedures.**
 
-## Repository layout
+## What it includes
+
+- **Vessel transmitter firmware:** ESP32, RA-02 LoRa radio, GPS, MPU6050 motion sensor, SOS button, and optional microSD logging.
+- **Shore receiver firmware:** ESP32 and RA-02 LoRa radio; forwards received JSON messages over USB serial and can log received packets to microSD.
+- **Dashboard:** Streamlit application for viewing events and vessel locations.
+- **Serial support:** JSON message parsing, serial reading, event history, and demonstration-event generation.
+- **Documentation and tests:** Wiring reference, setup instructions, parser unit tests, and a test-report template.
+
+> **Implementation status:** Source code is provided for these components, but source code alone does not prove that the physical hardware works. Compile and test each part on the actual boards before claiming it is functional.
+
+## How it works
 
 ```text
-SeaSafe/
+[Vessel ESP32]
+  GPS + MPU6050 + SOS button + optional microSD
+              |
+              v
+       [RA-02 LoRa radio]
+              ))))  wireless packet  ((((
+       [RA-02 LoRa radio]
+              |
+              v
+       [Shore ESP32 receiver]
+              |
+         USB serial
+              |
+              v
+     [Local Streamlit dashboard]
+```
+
+The transmitter creates JSON events such as `STATUS`, `SOS`, `IMPACT_CANDIDATE`, and `TILT_CANDIDATE`. The receiver forwards valid-looking JSON payloads to its USB serial output. The dashboard parses the incoming messages and displays events.
+
+The dashboard can run in demonstration mode without hardware. **Demonstration events are simulated and must not be interpreted as real vessel positions or emergencies.** A working dashboard does not, by itself, prove that a LoRa packet was transmitted or received.
+
+## Repository structure
+
+```text
+SeaSafe_Submission/
 ├── app.py
 ├── sample_events.py
 ├── serial_protocol.py
@@ -15,35 +49,62 @@ SeaSafe/
 ├── serial_history.py
 ├── serial_simulator.py
 ├── requirements.txt
+├── README.md
+├── TEST_REPORT_TEMPLATE.md
+├── docs/
+│   └── WIRING.md
 ├── firmware/
-│   ├── SeaSafeTransmitter/SeaSafeTransmitter.ino
-│   └── SeaSafeReceiver/SeaSafeReceiver.ino
-├── docs/WIRING.md
-└── tests/test_serial_protocol.py
+│   ├── SeaSafeTransmitter/
+│   │   └── SeaSafeTransmitter.ino
+│   └── SeaSafeReceiver/
+│       └── SeaSafeReceiver.ino
+└── tests/
+    ├── test_serial_protocol.py
+    └── test_serial_reader.py
 ```
 
-## Architecture
+If this package is stored inside another Git repository, open a terminal in the `SeaSafe_Submission` directory to follow the instructions below.
 
-1. **Vessel node:** reads GPS serial data, samples MPU6050, monitors the SOS button, and emits JSON events.
-2. **LoRa link:** sends the JSON payload from the vessel RA-02 to the shore RA-02.
-3. **Shore node:** prints received payloads to USB serial and optionally logs received packets and radio RSSI/SNR to microSD.
-4. **Local dashboard:** reads JSON lines from the receiver's serial port and displays events.
+## Hardware
 
-The receiver forwards payloads unchanged; the dashboard parser checks the required `node_id`, `event_id`, and `event_type` fields. Dashboard availability does not prove radio delivery.
+For the full intended prototype:
 
-## Firmware dependencies
+- 2 compatible ESP32 development boards
+- 2 RA-02 LoRa modules (SX1278-based)
+- GPS module with UART output
+- MPU6050 accelerometer/gyroscope module
+- SOS push button
+- microSD module and card (optional but supported by the sketches)
+- Suitable 3.3 V power supply, wiring, and appropriate antennas
 
-Install these libraries in Arduino IDE Library Manager:
-- LoRa by Sandeep Mistry
-- TinyGPSPlus
-- Adafruit MPU6050
-- Adafruit Unified Sensor
+The example pin assignments are documented in [`docs/WIRING.md`](docs/WIRING.md). Confirm the exact pinout for your ESP32 board before wiring; ESP32-S3 boards may differ from classic ESP32 DevKit boards.
 
-`SPI`, `Wire`, and `SD` are included with the ESP32 Arduino core. Select the correct ESP32 board and COM port. Compile each sketch separately. The two sketches use a 433 MHz example frequency; confirm legal frequency/power conditions before enabling radio transmission.
+### Radio-frequency caution
 
-## Dashboard setup on Windows
+The firmware examples use `433E6` (433 MHz) as a configurable value. This is **not a statement that the frequency or chosen radio settings are automatically permitted for your use**. Before transmitting, check current Indian WPC/DoT rules and applicable band, power, antenna, and equipment conditions. Attach a suitable antenna before transmitting, and do not transmit into an unterminated RF output.
 
-Open Command Prompt in the repository directory:
+## Software requirements
+
+### Python dashboard
+
+- Python 3.10 or a compatible version supported by the installed Streamlit release
+- Packages listed in `requirements.txt`
+- A local computer with USB access to the shore ESP32 for live serial operation
+
+### ESP32 firmware
+
+Install Arduino IDE and the ESP32 board package. Install these libraries using Arduino IDE Library Manager:
+
+- **LoRa** by Sandeep Mistry
+- **TinyGPSPlus**
+- **Adafruit MPU6050**
+- **Adafruit Unified Sensor**
+
+`SPI`, `Wire`, and `SD` are provided by the ESP32 Arduino core. Library and board versions can affect compilation; record the versions used during testing.
+
+## Run the dashboard on Windows
+
+Open Command Prompt in the folder containing `app.py`:
 
 ```bat
 py -m venv .venv
@@ -53,21 +114,32 @@ pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-Open the local URL Streamlit prints, usually `http://localhost:8501`. Connect the **shore receiver ESP32** by USB, choose its COM port, and use 115200 baud. Close Arduino Serial Monitor first because only one application can usually own the COM port at a time.
+Open the local address printed by Streamlit, usually `http://localhost:8501`.
 
-The hosted Streamlit service cannot access a USB serial port physically connected to your laptop. Use local Streamlit for live serial reception. Use demo mode for a cloud-hosted presentation.
+### Live serial mode
 
-## Hardware bring-up order
+1. Upload the receiver firmware to the shore ESP32.
+2. Connect the receiver to the computer by USB.
+3. Close Arduino Serial Monitor or any other program using the same COM port.
+4. Select the receiver's COM port and baud rate **115200** in the dashboard.
+5. Generate a test event from the transmitter and verify that the same event reaches the receiver serial output and appears in the dashboard.
 
-1. Inspect wiring against `docs/WIRING.md` and the exact board pinout.
-2. Compile and upload the receiver sketch. Open Serial Monitor at 115200 and check its startup JSON. A `lora=ready` message only means library initialization succeeded; it does not prove reception.
-3. Compile and upload the transmitter sketch to a separate ESP32. Ensure the RA-02 antenna is attached and both devices use matching radio settings.
-4. Test with the devices a short, controlled distance apart. Confirm that a transmitter event appears on the receiver serial output.
-5. Connect receiver USB to local dashboard. Confirm a received event appears there.
-6. Check GPS outdoors, SOS button, sensor candidate events, and SD files independently. Record actual results in the test report; do not infer success from code compilation.
-7. Test packet loss, power cycling, duplicate events, range and interference in a safe controlled environment before making any performance claims.
+A hosted dashboard such as Streamlit Community Cloud cannot directly access a COM port physically connected to your laptop. Use the local dashboard for direct USB serial access; use demonstration mode for a cloud-hosted walkthrough.
 
-## Event JSON format
+## Compile and upload the firmware
+
+Compile each sketch separately in Arduino IDE:
+
+- `firmware/SeaSafeReceiver/SeaSafeReceiver.ino` — upload to the shore receiver ESP32.
+- `firmware/SeaSafeTransmitter/SeaSafeTransmitter.ino` — upload to the vessel ESP32.
+
+Select the correct board and port for each device. Check the wiring against `docs/WIRING.md` and the exact board's pinout. The receiver and transmitter must use compatible radio settings, including frequency and the LoRa library configuration.
+
+The sketches are an integration starting point. They have **not been certified or physically verified by the existence of these files**. Compilation, initialization messages, and actual over-the-air packet reception are separate checks.
+
+## Event format
+
+An example event is:
 
 ```json
 {
@@ -83,49 +155,61 @@ The hosted Streamlit service cannot access a USB serial port physically connecte
 }
 ```
 
-`timestamp` is `null` until GPS date and time are valid. Latitude/longitude are `null` when there is no recent GPS fix. Event types currently used: `STATUS`, `SOS`, `IMPACT_CANDIDATE`, and `TILT_CANDIDATE`. Sensor candidates are not confirmed emergencies.
+- `node_id`: identifier for the sending node.
+- `event_id`: event identifier used for duplicate detection.
+- `event_type`: `STATUS`, `SOS`, `IMPACT_CANDIDATE`, or `TILT_CANDIDATE` in the supplied firmware.
+- `timestamp`: UTC time when GPS date/time is valid; otherwise `null`.
+- `latitude` and `longitude`: coordinates when a recent GPS fix is available; otherwise `null`.
+- `gps_valid`: whether the firmware considers the GPS fix recent and valid.
+- `test_mode`: identifies demonstration/test data where used.
+- `message`: human-readable event description.
 
-## Tests
+An `IMPACT_CANDIDATE` or `TILT_CANDIDATE` is only a sensor-threshold indication, not a confirmed accident. The thresholds require calibration and controlled testing.
 
-From the project root:
+## Run the Python tests
+
+From the directory containing `tests/`:
 
 ```bat
 python -m unittest discover -s tests -v
 ```
 
-These are parser unit tests only. They do not test LoRa, GPS, SD, sensors, or marine performance.
+These tests cover limited Python parsing and serial-reader behavior. They do **not** test ESP32 firmware, RF transmission, GPS accuracy, sensor detection, SD persistence, or real-world range. Record the actual output and any failures in `TEST_REPORT_TEMPLATE.md`.
+
+## Hardware validation checklist
+
+Only mark a step complete after observing and recording its result.
+
+- [ ] Dashboard starts locally.
+- [ ] Python unit tests pass.
+- [ ] Receiver sketch compiles and uploads to the intended board.
+- [ ] Transmitter sketch compiles and uploads to the intended board.
+- [ ] Receiver reports LoRa initialization status.
+- [ ] A physical LoRa packet from the transmitter is received by the receiver.
+- [ ] GPS fix and coordinates are verified outdoors.
+- [ ] SOS button generates an event.
+- [ ] MPU6050 candidate events are checked under controlled conditions.
+- [ ] microSD logs are present and remain readable after reboot.
+- [ ] A real received packet appears in the local dashboard.
+- [ ] Frequency and radio-power compliance have been checked.
+
+Use the test-report template to capture board models, library versions, wiring, serial logs, photos, and results.
 
 ## Known limitations
 
-- No acknowledgement/retry protocol; a transmitted packet may be lost.
+- No end-to-end acknowledgement or retry protocol; transmitted packets can be lost.
 - No encryption or device authentication; do not send sensitive data.
-- No certified emergency detection, distress routing, or guaranteed coverage.
-- Impact/tilt thresholds are starting heuristics and need calibration.
-- SD logging is best-effort; check card format, wiring, power and actual files.
-- JSON message escaping is intended for the simple messages used by the sketch; extend safely if arbitrary user text is added.
-- A shared default node ID must be changed if multiple vessel transmitters are deployed.
-- The code is an MVP starting point and requires hardware validation and review.
+- No guaranteed coverage, delivery, or emergency-response integration.
+- GPS may not obtain a fix indoors or under obstructed sky.
+- Motion thresholds are heuristic and can cause missed events or false positives.
+- microSD operation depends on module wiring, card format, power, and successful initialization.
+- The example sketches use fixed pin assignments and a fixed node ID that may need changing for the chosen boards and multiple vessels.
+- The prototype is not a replacement for approved maritime distress equipment, radio procedures, or emergency services.
 
-## Suggested demo script
+## Contributing and reuse
 
-1. Show the dashboard in demo mode and explicitly label the map/events as simulated.
-2. Show receiver boot output in Serial Monitor.
-3. Press the transmitter SOS button and show the payload on receiver serial/dashboard.
-4. Show GPS-valid vs no-fix behavior outdoors/indoors.
-5. Show SD log files after powering down safely.
-6. Explain that the prototype is not a replacement for certified maritime emergency systems.
+You can fork the repository, adapt the code to your hardware, and submit improvements. Preserve clear separation between simulated and real data, document any pin or protocol changes, and include reproducible test evidence for hardware claims. Check the repository's selected license before redistributing or reusing the code; if no license is included, do not assume that public visibility grants permission to reuse it.
 
-## Submission status checklist
+## Project status
 
-- [ ] Python dashboard starts successfully on the target machine.
-- [ ] Unit tests pass.
-- [ ] Both firmware sketches compile for the selected board.
-- [ ] LoRa packet verified between the two physical nodes.
-- [ ] GPS fix and coordinate values independently verified.
-- [ ] SOS button event verified.
-- [ ] MPU6050 candidate event tested and threshold documented.
-- [ ] SD event logs verified after reboot.
-- [ ] Local dashboard receives a physical receiver packet.
-- [ ] Frequency/power compliance checked for the actual deployment.
-
-Check only the items you have personally verified.
+SeaSafe is a prototype intended for demonstration and further development. Document what has actually been tested, what remains unverified, and the exact hardware/software versions used. Do not claim operational maritime safety performance without rigorous testing and appropriate certification.
